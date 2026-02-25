@@ -1,5 +1,6 @@
 use std::fs;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 /// Helper to get the pandorust binary path.
@@ -147,4 +148,49 @@ fn test_missing_input_file() {
         "stderr should contain an error message, got: {}",
         stderr
     );
+}
+
+#[test]
+fn test_list_formats() {
+    let result = pandorust_cmd()
+        .arg("--list-formats")
+        .output()
+        .expect("failed to execute pandorust");
+
+    assert!(result.status.success(), "--list-formats should succeed without input/output");
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("markdown"), "should list markdown input format");
+    assert!(stdout.contains("html"), "should list html output format");
+    assert!(stdout.contains("docx"), "should list docx output format");
+}
+
+#[test]
+fn test_stdin_input() {
+    let tmp = TempDir::new().unwrap();
+    let output = tmp.path().join("output.html");
+
+    let mut child = pandorust_cmd()
+        .arg("-")
+        .arg("-o")
+        .arg(output.to_str().unwrap())
+        .arg("-f")
+        .arg("md")
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn pandorust");
+
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"# From Stdin\n\nPiped content.\n")
+        .unwrap();
+
+    let status = child.wait().unwrap();
+    assert!(status.success(), "stdin input should work");
+
+    let html = fs::read_to_string(&output).unwrap();
+    assert!(html.contains("From Stdin"), "output should contain stdin content");
+    assert!(html.contains("Piped content"), "output should contain piped paragraph");
 }
