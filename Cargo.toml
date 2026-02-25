@@ -2,17 +2,35 @@
 name = "pandorust"
 version = "0.1.0"
 edition = "2024"
-description = "A pure-Rust document converter. Markdown, HTML, DOCX, PDF, PPTX."
+description = "A pure-Rust document converter. Markdown → HTML, DOCX. Single binary, no runtime dependencies."
 license = "MIT"
+repository = "https://github.com/qhkm/pandorust"
+keywords = ["markdown", "docx", "html", "converter", "pandoc"]
+categories = ["command-line-utilities", "text-processing"]
+readme = "README.md"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
 comrak = "0.50"
 docx-rs = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2"
 
+[dependencies.clap]
+version = "4.5"
+features = ["derive"]
+optional = true
+
+[features]
+default = ["cli"]
+cli = ["clap"]
+
+[[bin]]
+name = "pandorust"
+required-features = ["cli"]
+
 [dev-dependencies]
 tempfile = "3"
 zip = "8.1.0"
+# clap needed for CLI integration tests
+clap = { version = "4.5", features = ["derive"] }
