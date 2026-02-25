@@ -6,7 +6,9 @@ use crate::utils::error::Result;
 
 /// Parse a markdown string into a Document AST.
 pub fn read_markdown(input: &str) -> Result<Document> {
-    let (yaml, body) = split_front_matter(input);
+    // Pre-process grid tables and \newpage before passing to comrak
+    let preprocessed = crate::readers::grid_table::preprocess_grid_tables(input);
+    let (yaml, body) = split_front_matter(&preprocessed);
     let meta = parse_yaml_meta(yaml)?;
 
     let arena = Arena::new();
