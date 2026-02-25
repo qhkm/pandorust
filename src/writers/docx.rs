@@ -2,8 +2,8 @@ use std::io::Cursor;
 
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, Paragraph, Run, RunFonts, Shading, ShdType,
-    Table, TableCell, TableCellBorder, TableCellBorderPosition, TableCellBorders, TableRow,
-    WidthType,
+    Table, TableCell, TableCellBorder, TableCellBorderPosition, TableCellBorders,
+    TableCellMargins, TableRow, WidthType,
 };
 
 use crate::ast::{Block, Document, Inline};
@@ -78,15 +78,15 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
     match block {
         Block::Para(inlines) | Block::Plain(inlines) => {
             let p = build_paragraph(inlines, Some(base_size), None, body_font)
-                .line_spacing(LineSpacing::new().after(120).line(276));
+                .line_spacing(LineSpacing::new().after(160).line(300));
             docx.add_paragraph(p)
         }
 
         Block::Heading(_, level, inlines) => {
             let size = heading_size(*level, base_size);
-            let before = if *level <= 2 { 360 } else { 240 }; // more space before major headings
+            let before = if *level <= 2 { 400 } else { 280 };
             let p = build_paragraph(inlines, Some(size), Some(true), body_font)
-                .line_spacing(LineSpacing::new().before(before).after(120));
+                .line_spacing(LineSpacing::new().before(before).after(160));
             docx.add_paragraph(p)
         }
 
@@ -126,7 +126,7 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
                 let text = extract_inline_text_from_blocks(item_blocks);
                 let p = Paragraph::new()
                     .indent(Some(720), None, None, None)
-                    .line_spacing(LineSpacing::new().after(60).line(276))
+                    .line_spacing(LineSpacing::new().after(80).line(300))
                     .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("\u{2022} {}", text)));
                 d = d.add_paragraph(p);
             }
@@ -141,7 +141,7 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
                 let text = extract_inline_text_from_blocks(item_blocks);
                 let p = Paragraph::new()
                     .indent(Some(720), None, None, None)
-                    .line_spacing(LineSpacing::new().after(60).line(276))
+                    .line_spacing(LineSpacing::new().after(80).line(300))
                     .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("{}. {}", num, text)));
                 d = d.add_paragraph(p);
             }
@@ -237,9 +237,12 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
                 rows.push(TableRow::new(vec![TableCell::new()]));
             }
 
+            // Cell padding: 80 DXA top/bottom (~4pt), 120 DXA left/right (~6pt)
+            let cell_margins = TableCellMargins::new().margin(80, 120, 80, 120);
             let tbl = Table::new(rows)
                 .width(9000, WidthType::Dxa)
-                .set_grid(grid);
+                .set_grid(grid)
+                .margins(cell_margins);
 
             // Add spacing after table
             docx.add_table(tbl)
