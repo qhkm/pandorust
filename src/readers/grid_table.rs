@@ -35,6 +35,27 @@ pub fn preprocess_grid_tables(input: &str) -> String {
             continue;
         }
 
+        // Handle standalone backslash (LaTeX line break) — skip it
+        if trimmed == "\\" {
+            output.push('\n');
+            i += 1;
+            continue;
+        }
+
+        // Handle pandoc fenced divs ::: {custom-style="..."} ... :::
+        // Strip the ::: markers and pass through the inner content
+        if trimmed.starts_with(":::") {
+            if trimmed.len() > 3 {
+                // Opening ::: with attributes — skip this line
+                i += 1;
+                continue;
+            } else {
+                // Closing ::: — skip this line
+                i += 1;
+                continue;
+            }
+        }
+
         // Check if this line starts a grid table
         if is_border_line(trimmed) {
             // Collect all lines that are part of this grid table

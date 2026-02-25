@@ -121,6 +121,40 @@ fn test_newpage_latex_command() {
     );
 }
 
+#[test]
+fn test_fenced_div_custom_style() {
+    let md = "Above\n\n::: {custom-style=\"Footer\"}\n**Kitakod Ventures** | Pembangun Perisian\n:::\n\nBelow";
+    let doc = read_markdown(md).unwrap();
+    // The fenced div content should be rendered, not literal ::: syntax
+    let has_literal_colons = doc.blocks.iter().any(|b| match b {
+        Block::Para(inlines) | Block::Plain(inlines) => {
+            inlines.iter().any(|i| match i {
+                Inline::Str(s) => s.contains(":::"),
+                _ => false,
+            })
+        }
+        _ => false,
+    });
+    assert!(!has_literal_colons, "Should not contain literal ':::' syntax, blocks: {:?}", doc.blocks);
+    // The inner content (bold text) should be present
+    let all_text = doc.blocks.iter().map(|b| format!("{:?}", b)).collect::<String>();
+    assert!(all_text.contains("Kitakod Ventures"), "Should contain 'Kitakod Ventures', got: {}", all_text);
+}
+
+#[test]
+fn test_standalone_backslash_removed() {
+    let md = "Above\n\n\\\n\nBelow";
+    let doc = read_markdown(md).unwrap();
+    // Standalone backslash should not appear as literal text
+    let has_lone_backslash = doc.blocks.iter().any(|b| match b {
+        Block::Para(inlines) | Block::Plain(inlines) => {
+            inlines.len() == 1 && matches!(&inlines[0], Inline::Str(s) if s.trim() == "\\")
+        }
+        _ => false,
+    });
+    assert!(!has_lone_backslash, "Should not have a paragraph with just a backslash, blocks: {:?}", doc.blocks);
+}
+
 // Helper to extract text from blocks
 fn extract_text(blocks: &[Block]) -> String {
     blocks
