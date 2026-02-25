@@ -1,8 +1,9 @@
 use std::io::Cursor;
 
 use docx_rs::{
-    AlignmentType, BreakType, Docx, Paragraph, Run, RunFonts, Shading, ShdType, Table,
-    TableCell, TableCellBorder, TableCellBorderPosition, TableCellBorders, TableRow, WidthType,
+    AlignmentType, BreakType, Docx, LineSpacing, Paragraph, Run, RunFonts, Shading, ShdType,
+    Table, TableCell, TableCellBorder, TableCellBorderPosition, TableCellBorders, TableRow,
+    WidthType,
 };
 
 use crate::ast::{Block, Document, Inline};
@@ -33,24 +34,28 @@ pub fn write_docx(doc: &Document) -> Result<Vec<u8>> {
     if let Some(title) = doc.meta.title() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
+            .line_spacing(LineSpacing::new().after(60))
             .add_run(Run::new().fonts(body_font.clone()).bold().size(48).add_text(title));
         docx = docx.add_paragraph(p);
     }
     if let Some(subtitle) = doc.meta.subtitle() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
+            .line_spacing(LineSpacing::new().after(60))
             .add_run(Run::new().fonts(body_font.clone()).size(32).add_text(subtitle));
         docx = docx.add_paragraph(p);
     }
     if let Some(author) = doc.meta.author() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
+            .line_spacing(LineSpacing::new().after(40))
             .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("Author: {}", author)));
         docx = docx.add_paragraph(p);
     }
     if let Some(date) = doc.meta.date() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
+            .line_spacing(LineSpacing::new().after(200))
             .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(date));
         docx = docx.add_paragraph(p);
     }
@@ -72,13 +77,16 @@ pub fn write_docx(doc: &Document) -> Result<Vec<u8>> {
 fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts) -> Docx {
     match block {
         Block::Para(inlines) | Block::Plain(inlines) => {
-            let p = build_paragraph(inlines, Some(base_size), None, body_font);
+            let p = build_paragraph(inlines, Some(base_size), None, body_font)
+                .line_spacing(LineSpacing::new().after(120).line(276));
             docx.add_paragraph(p)
         }
 
         Block::Heading(_, level, inlines) => {
             let size = heading_size(*level, base_size);
-            let p = build_paragraph(inlines, Some(size), Some(true), body_font);
+            let before = if *level <= 2 { 360 } else { 240 }; // more space before major headings
+            let p = build_paragraph(inlines, Some(size), Some(true), body_font)
+                .line_spacing(LineSpacing::new().before(before).after(120));
             docx.add_paragraph(p)
         }
 
@@ -118,6 +126,7 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
                 let text = extract_inline_text_from_blocks(item_blocks);
                 let p = Paragraph::new()
                     .indent(Some(720), None, None, None)
+                    .line_spacing(LineSpacing::new().after(60).line(276))
                     .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("\u{2022} {}", text)));
                 d = d.add_paragraph(p);
             }
@@ -132,6 +141,7 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
                 let text = extract_inline_text_from_blocks(item_blocks);
                 let p = Paragraph::new()
                     .indent(Some(720), None, None, None)
+                    .line_spacing(LineSpacing::new().after(60).line(276))
                     .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("{}. {}", num, text)));
                 d = d.add_paragraph(p);
             }
@@ -231,7 +241,9 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
                 .width(9000, WidthType::Dxa)
                 .set_grid(grid);
 
+            // Add spacing after table
             docx.add_table(tbl)
+                .add_paragraph(Paragraph::new().line_spacing(LineSpacing::new().before(0).after(120)))
         }
 
         Block::HorizontalRule => {
@@ -283,8 +295,9 @@ fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts
 fn write_block_quote_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts) -> Docx {
     match block {
         Block::Para(inlines) | Block::Plain(inlines) => {
-            let mut p = build_paragraph(inlines, Some(base_size), None, body_font);
-            p = p.indent(Some(720), None, None, None);
+            let p = build_paragraph(inlines, Some(base_size), None, body_font)
+                .indent(Some(720), None, None, None)
+                .line_spacing(LineSpacing::new().after(80).line(276));
             docx.add_paragraph(p)
         }
         other => write_block(docx, other, base_size, body_font),

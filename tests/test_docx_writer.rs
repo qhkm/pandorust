@@ -1,5 +1,7 @@
 use pandorust::readers::markdown::read_markdown;
 use pandorust::writers::docx::write_docx;
+use std::io::Read;
+use std::io::Cursor;
 
 #[test]
 fn test_docx_generates_valid_zip() {
@@ -48,6 +50,21 @@ fn test_docx_body_text_has_font() {
     // The DOCX XML should reference a font name for body text
     assert!(content.contains("Calibri") || content.contains("Arial"),
         "DOCX body text should use Calibri or Arial font");
+}
+
+#[test]
+fn test_docx_has_paragraph_spacing() {
+    let md = "# Heading\n\nFirst paragraph.\n\nSecond paragraph.\n\n- Item one\n- Item two";
+    let doc = read_markdown(md).unwrap();
+    let bytes = write_docx(&doc).unwrap();
+    // Extract document.xml from the DOCX zip
+    let cursor = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor).unwrap();
+    let mut doc_xml = String::new();
+    archive.by_name("word/document.xml").unwrap().read_to_string(&mut doc_xml).unwrap();
+    // Should contain spacing elements (w:spacing with before/after)
+    assert!(doc_xml.contains("w:before") || doc_xml.contains("w:after"),
+        "DOCX paragraphs should have spacing, XML snippet: {}", &doc_xml[..2000.min(doc_xml.len())]);
 }
 
 #[test]
