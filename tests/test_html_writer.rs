@@ -62,3 +62,19 @@ fn test_horizontal_rule_to_html() {
     let html = write_html(&doc);
     assert!(html.contains("<hr>"));
 }
+
+#[test]
+fn test_html_has_default_font_styling() {
+    let doc = read_markdown("Hello").unwrap();
+    let html = write_html(&doc);
+    assert!(html.contains("font-family"), "HTML should include font-family styling");
+    assert!(html.contains("line-height"), "HTML should include line-height");
+}
+
+#[test]
+fn test_html_respects_fontsize_meta() {
+    let md = "---\nfontsize: 11pt\n---\n\nHello";
+    let doc = read_markdown(md).unwrap();
+    let html = write_html(&doc);
+    assert!(html.contains("11pt"), "HTML should respect fontsize from metadata, got: {}", &html[..500.min(html.len())]);
+}

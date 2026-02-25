@@ -8,10 +8,15 @@ pub fn write_html(doc: &Document) -> String {
 
     // ---- <head> ----
     let title = doc.meta.title().unwrap_or("");
+    let fontsize = doc.meta.get_str("fontsize").unwrap_or("12pt");
     out.push_str("<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n");
     if !title.is_empty() {
         out.push_str(&format!("<title>{}</title>\n", escape_html(title)));
     }
+    out.push_str(&format!(
+        "<style>\nbody {{ font-family: \"Calibri\", \"Segoe UI\", \"Arial\", sans-serif; font-size: {}; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2em; color: #333; }}\ntable {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}\nth, td {{ border: 1px solid #999; padding: 8px 12px; text-align: left; }}\nth {{ background-color: #1F4E79; color: white; font-weight: bold; }}\ntr:nth-child(even) {{ background-color: #EDF2F7; }}\npre {{ background: #f5f5f5; padding: 1em; overflow-x: auto; border-radius: 4px; }}\ncode {{ font-family: \"Courier New\", monospace; }}\nblockquote {{ border-left: 4px solid #1F4E79; margin: 1em 0; padding: 0.5em 1em; background: #f9f9f9; }}\nh1, h2, h3 {{ color: #1F4E79; }}\nhr {{ border: none; border-top: 2px solid #ccc; margin: 2em 0; }}\n</style>\n",
+        escape_html(fontsize)
+    ));
     out.push_str("</head>\n<body>\n");
 
     // ---- metadata header block ----

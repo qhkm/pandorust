@@ -42,6 +42,14 @@ impl Meta {
             _ => None,
         }
     }
+
+    /// Get any string metadata value by key.
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        match self.entries.get(key) {
+            Some(MetaValue::String(s)) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

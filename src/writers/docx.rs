@@ -8,39 +8,56 @@ use docx_rs::{
 use crate::ast::{Block, Document, Inline};
 use crate::utils::error::{PandorustError, Result};
 
+/// Parse fontsize metadata (e.g. "11pt") to half-points for DOCX.
+/// DOCX sizes are in half-points: 11pt = 22, 12pt = 24, etc.
+fn parse_fontsize(meta_fontsize: Option<&str>) -> usize {
+    if let Some(s) = meta_fontsize {
+        let num_str: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(pt) = num_str.parse::<usize>() {
+            return pt * 2; // convert pt to half-points
+        }
+    }
+    24 // default: 12pt = 24 half-points
+}
+
 /// Write a Document AST to DOCX bytes.
 pub fn write_docx(doc: &Document) -> Result<Vec<u8>> {
     let mut docx = Docx::new();
+    let base_size = parse_fontsize(doc.meta.get_str("fontsize"));
+    let body_font = RunFonts::new()
+        .ascii("Calibri")
+        .hi_ansi("Calibri")
+        .cs("Calibri");
 
     // --- Metadata block ---
     if let Some(title) = doc.meta.title() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
-            .add_run(Run::new().bold().size(48).add_text(title));
+            .add_run(Run::new().fonts(body_font.clone()).bold().size(48).add_text(title));
         docx = docx.add_paragraph(p);
     }
     if let Some(subtitle) = doc.meta.subtitle() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
-            .add_run(Run::new().size(32).add_text(subtitle));
+            .add_run(Run::new().fonts(body_font.clone()).size(32).add_text(subtitle));
         docx = docx.add_paragraph(p);
     }
     if let Some(author) = doc.meta.author() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
-            .add_run(Run::new().size(24).add_text(format!("Author: {}", author)));
+            .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("Author: {}", author)));
         docx = docx.add_paragraph(p);
     }
     if let Some(date) = doc.meta.date() {
         let p = Paragraph::new()
             .align(AlignmentType::Center)
-            .add_run(Run::new().size(24).add_text(date));
+            .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(date));
         docx = docx.add_paragraph(p);
     }
 
     // --- Body blocks ---
     for block in &doc.blocks {
-        docx = write_block(docx, block);
+        docx = write_block(docx, block, base_size, &body_font);
     }
 
     // --- Pack to bytes ---
@@ -52,16 +69,16 @@ pub fn write_docx(doc: &Document) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn write_block(docx: Docx, block: &Block) -> Docx {
+fn write_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts) -> Docx {
     match block {
         Block::Para(inlines) | Block::Plain(inlines) => {
-            let p = build_paragraph(inlines, None, None);
+            let p = build_paragraph(inlines, Some(base_size), None, body_font);
             docx.add_paragraph(p)
         }
 
         Block::Heading(_, level, inlines) => {
-            let size = heading_size(*level);
-            let p = build_paragraph(inlines, Some(size), Some(true));
+            let size = heading_size(*level, base_size);
+            let p = build_paragraph(inlines, Some(size), Some(true), body_font);
             docx.add_paragraph(p)
         }
 
@@ -90,8 +107,7 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
         Block::BlockQuote(inner_blocks) => {
             let mut d = docx;
             for inner in inner_blocks {
-                // Apply indent by using a wrapper paragraph approach
-                d = write_block_quote_block(d, inner);
+                d = write_block_quote_block(d, inner, base_size, body_font);
             }
             d
         }
@@ -99,11 +115,10 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
         Block::BulletList(items) => {
             let mut d = docx;
             for item_blocks in items {
-                // Each item is a list of blocks — render inline content with bullet prefix
                 let text = extract_inline_text_from_blocks(item_blocks);
                 let p = Paragraph::new()
                     .indent(Some(720), None, None, None)
-                    .add_run(Run::new().add_text(format!("\u{2022} {}", text)));
+                    .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("\u{2022} {}", text)));
                 d = d.add_paragraph(p);
             }
             d
@@ -117,7 +132,7 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
                 let text = extract_inline_text_from_blocks(item_blocks);
                 let p = Paragraph::new()
                     .indent(Some(720), None, None, None)
-                    .add_run(Run::new().add_text(format!("{}. {}", num, text)));
+                    .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text(format!("{}. {}", num, text)));
                 d = d.add_paragraph(p);
             }
             d
@@ -138,20 +153,17 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
                     .map(|cell| {
                         let text = extract_inline_text_from_blocks(&cell.content);
                         let run = Run::new()
+                            .fonts(body_font.clone())
+                            .size(base_size)
                             .bold()
                             .color("FFFFFF")
                             .add_text(text);
                         let p = Paragraph::new().add_run(run);
-
-                        // Shading for header: dark blue background
                         let shading = Shading::new()
                             .shd_type(ShdType::Clear)
                             .color("auto")
                             .fill("1F4E79");
-
-                        // Cell borders
                         let borders = make_cell_borders("333333", 6);
-
                         TableCell::new()
                             .width(col_width, WidthType::Dxa)
                             .shading(shading)
@@ -167,29 +179,20 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
             for (body_idx, body) in table.bodies.iter().enumerate() {
                 let all_rows = body.head.iter().chain(body.body.iter());
                 for (row_idx, row) in all_rows.enumerate() {
-                    // Alternating row shading
-                    let fill = if row_idx % 2 == 0 {
-                        "FFFFFF"
-                    } else {
-                        "EDF2F7"
-                    };
+                    let fill = if row_idx % 2 == 0 { "FFFFFF" } else { "EDF2F7" };
                     let _ = body_idx;
-
                     let cells: Vec<TableCell> = row
                         .cells
                         .iter()
                         .map(|cell| {
                             let text = extract_inline_text_from_blocks(&cell.content);
-                            let run = Run::new().add_text(text);
+                            let run = Run::new().fonts(body_font.clone()).size(base_size).add_text(text);
                             let p = Paragraph::new().add_run(run);
-
                             let shading = Shading::new()
                                 .shd_type(ShdType::Clear)
                                 .color("auto")
                                 .fill(fill);
-
                             let borders = make_cell_borders("333333", 6);
-
                             TableCell::new()
                                 .width(col_width, WidthType::Dxa)
                                 .shading(shading)
@@ -208,7 +211,7 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
                     .iter()
                     .map(|cell| {
                         let text = extract_inline_text_from_blocks(&cell.content);
-                        let run = Run::new().add_text(text);
+                        let run = Run::new().fonts(body_font.clone()).size(base_size).add_text(text);
                         let p = Paragraph::new().add_run(run);
                         let borders = make_cell_borders("333333", 6);
                         TableCell::new()
@@ -221,7 +224,6 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
             }
 
             if rows.is_empty() {
-                // No rows — add an empty table with placeholder
                 rows.push(TableRow::new(vec![TableCell::new()]));
             }
 
@@ -234,7 +236,7 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
 
         Block::HorizontalRule => {
             let p = Paragraph::new()
-                .add_run(Run::new().add_text("—".repeat(40)));
+                .add_run(Run::new().fonts(body_font.clone()).size(base_size).add_text("—".repeat(40)));
             docx.add_paragraph(p)
         }
 
@@ -247,31 +249,28 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
         Block::LineBlock(lines) => {
             let mut d = docx;
             for line_inlines in lines {
-                let p = build_paragraph(line_inlines, None, None);
+                let p = build_paragraph(line_inlines, Some(base_size), None, body_font);
                 d = d.add_paragraph(p);
             }
             d
         }
 
-        // Skip raw blocks, figures, divs, definition lists for now
         Block::RawBlock(_, _) => docx,
         Block::Figure(_, _, blocks) | Block::Div(_, blocks) => {
             let mut d = docx;
             for b in blocks {
-                d = write_block(d, b);
+                d = write_block(d, b, base_size, body_font);
             }
             d
         }
         Block::DefinitionList(items) => {
             let mut d = docx;
             for (term_inlines, definitions) in items {
-                // Render the term bold
-                let p = build_paragraph(term_inlines, None, Some(true));
+                let p = build_paragraph(term_inlines, Some(base_size), Some(true), body_font);
                 d = d.add_paragraph(p);
-                // Render each definition indented
                 for def_blocks in definitions {
                     for b in def_blocks {
-                        d = write_block_quote_block(d, b);
+                        d = write_block_quote_block(d, b, base_size, body_font);
                     }
                 }
             }
@@ -281,23 +280,23 @@ fn write_block(docx: Docx, block: &Block) -> Docx {
 }
 
 /// Write a block inside a block quote (indented).
-fn write_block_quote_block(docx: Docx, block: &Block) -> Docx {
+fn write_block_quote_block(docx: Docx, block: &Block, base_size: usize, body_font: &RunFonts) -> Docx {
     match block {
         Block::Para(inlines) | Block::Plain(inlines) => {
-            let mut p = build_paragraph(inlines, None, None);
+            let mut p = build_paragraph(inlines, Some(base_size), None, body_font);
             p = p.indent(Some(720), None, None, None);
             docx.add_paragraph(p)
         }
-        other => write_block(docx, other),
+        other => write_block(docx, other, base_size, body_font),
     }
 }
 
 /// Build a paragraph from a slice of Inline elements.
 /// `size` is in half-points (e.g. 24 = 12pt).
 /// `bold` overrides all runs to bold.
-fn build_paragraph(inlines: &[Inline], size: Option<usize>, bold_override: Option<bool>) -> Paragraph {
+fn build_paragraph(inlines: &[Inline], size: Option<usize>, bold_override: Option<bool>, body_font: &RunFonts) -> Paragraph {
     let mut p = Paragraph::new();
-    let runs = build_runs(inlines, size, bold_override);
+    let runs = build_runs(inlines, size, bold_override, body_font);
     for run in runs {
         p = p.add_run(run);
     }
@@ -305,68 +304,54 @@ fn build_paragraph(inlines: &[Inline], size: Option<usize>, bold_override: Optio
 }
 
 /// Recursively convert Inline elements to docx-rs Runs.
-fn build_runs(inlines: &[Inline], size: Option<usize>, bold_override: Option<bool>) -> Vec<Run> {
+fn build_runs(inlines: &[Inline], size: Option<usize>, bold_override: Option<bool>, body_font: &RunFonts) -> Vec<Run> {
     let mut runs: Vec<Run> = Vec::new();
 
     for inline in inlines {
         match inline {
             Inline::Str(s) => {
-                let mut run = Run::new().add_text(s.clone());
-                if let Some(sz) = size {
-                    run = run.size(sz);
-                }
-                if bold_override == Some(true) {
-                    run = run.bold();
-                }
+                let mut run = Run::new().fonts(body_font.clone()).add_text(s.clone());
+                if let Some(sz) = size { run = run.size(sz); }
+                if bold_override == Some(true) { run = run.bold(); }
                 runs.push(run);
             }
 
             Inline::Space | Inline::SoftBreak => {
-                let mut run = Run::new().add_text(" ");
-                if let Some(sz) = size {
-                    run = run.size(sz);
-                }
-                if bold_override == Some(true) {
-                    run = run.bold();
-                }
+                let mut run = Run::new().fonts(body_font.clone()).add_text(" ");
+                if let Some(sz) = size { run = run.size(sz); }
+                if bold_override == Some(true) { run = run.bold(); }
                 runs.push(run);
             }
 
             Inline::LineBreak => {
-                let mut run = Run::new().add_break(BreakType::TextWrapping);
-                if let Some(sz) = size {
-                    run = run.size(sz);
-                }
+                let mut run = Run::new().fonts(body_font.clone()).add_break(BreakType::TextWrapping);
+                if let Some(sz) = size { run = run.size(sz); }
                 runs.push(run);
             }
 
             Inline::Strong(inner) => {
-                let inner_runs = build_runs(inner, size, Some(true));
-                for mut r in inner_runs {
+                for mut r in build_runs(inner, size, Some(true), body_font) {
                     r = r.bold();
                     runs.push(r);
                 }
             }
 
             Inline::Emph(inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                for mut r in inner_runs {
+                for mut r in build_runs(inner, size, bold_override, body_font) {
                     r = r.italic();
                     runs.push(r);
                 }
             }
 
             Inline::Strikeout(inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                for mut r in inner_runs {
+                for mut r in build_runs(inner, size, bold_override, body_font) {
                     r = r.strike();
                     runs.push(r);
                 }
             }
 
             Inline::Underline(inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                for mut r in inner_runs {
+                for mut r in build_runs(inner, size, bold_override, body_font) {
                     r = r.underline("single");
                     runs.push(r);
                 }
@@ -377,102 +362,77 @@ fn build_runs(inlines: &[Inline], size: Option<usize>, bold_override: Option<boo
                     .ascii("Courier New")
                     .hi_ansi("Courier New")
                     .cs("Courier New");
-                let mut run = Run::new()
-                    .fonts(courier)
-                    .add_text(code_str.clone());
-                if let Some(sz) = size {
-                    run = run.size(sz);
-                }
+                let mut run = Run::new().fonts(courier).add_text(code_str.clone());
+                if let Some(sz) = size { run = run.size(sz); }
                 runs.push(run);
             }
 
             Inline::Link(_, content_inlines, target) => {
-                // Render as blue underlined text
                 let link_text = if content_inlines.is_empty() {
                     target.url.clone()
                 } else {
                     inline_text_content(content_inlines)
                 };
-                let mut run = Run::new()
-                    .color("0000FF")
-                    .underline("single")
-                    .add_text(link_text);
-                if let Some(sz) = size {
-                    run = run.size(sz);
-                }
-                if bold_override == Some(true) {
-                    run = run.bold();
-                }
+                let mut run = Run::new().fonts(body_font.clone())
+                    .color("0000FF").underline("single").add_text(link_text);
+                if let Some(sz) = size { run = run.size(sz); }
+                if bold_override == Some(true) { run = run.bold(); }
                 runs.push(run);
             }
 
             Inline::Image(_, alt_inlines, target) => {
-                // Render as italic text placeholder
                 let alt = if alt_inlines.is_empty() {
                     target.url.clone()
                 } else {
                     inline_text_content(alt_inlines)
                 };
-                let mut run = Run::new().italic().add_text(format!("[Image: {}]", alt));
-                if let Some(sz) = size {
-                    run = run.size(sz);
-                }
+                let mut run = Run::new().fonts(body_font.clone()).italic().add_text(format!("[Image: {}]", alt));
+                if let Some(sz) = size { run = run.size(sz); }
                 runs.push(run);
             }
 
             Inline::Superscript(inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                runs.extend(inner_runs);
+                runs.extend(build_runs(inner, size, bold_override, body_font));
             }
 
             Inline::Subscript(inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                runs.extend(inner_runs);
+                runs.extend(build_runs(inner, size, bold_override, body_font));
             }
 
             Inline::SmallCaps(inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                runs.extend(inner_runs);
+                runs.extend(build_runs(inner, size, bold_override, body_font));
             }
 
             Inline::Quoted(_, inner) => {
-                // Add opening quote
-                let mut open = Run::new().add_text("\u{201C}");
+                let mut open = Run::new().fonts(body_font.clone()).add_text("\u{201C}");
                 if let Some(sz) = size { open = open.size(sz); }
                 runs.push(open);
-
-                let inner_runs = build_runs(inner, size, bold_override);
-                runs.extend(inner_runs);
-
-                let mut close = Run::new().add_text("\u{201D}");
+                runs.extend(build_runs(inner, size, bold_override, body_font));
+                let mut close = Run::new().fonts(body_font.clone()).add_text("\u{201D}");
                 if let Some(sz) = size { close = close.size(sz); }
                 runs.push(close);
             }
 
             Inline::Math(_, math_str) => {
-                let courier = RunFonts::new()
-                    .ascii("Courier New")
-                    .hi_ansi("Courier New");
+                let courier = RunFonts::new().ascii("Courier New").hi_ansi("Courier New");
                 let mut run = Run::new().fonts(courier).add_text(math_str.clone());
                 if let Some(sz) = size { run = run.size(sz); }
                 runs.push(run);
             }
 
             Inline::Span(_, inner) => {
-                let inner_runs = build_runs(inner, size, bold_override);
-                runs.extend(inner_runs);
+                runs.extend(build_runs(inner, size, bold_override, body_font));
             }
 
             Inline::Note(blocks) => {
-                // Render note content inline as a parenthetical
                 let text = extract_inline_text_from_blocks(blocks);
-                let mut run = Run::new().add_text(format!(" ({})", text));
+                let mut run = Run::new().fonts(body_font.clone()).add_text(format!(" ({})", text));
                 if let Some(sz) = size { run = run.size(sz); }
                 runs.push(run);
             }
 
             Inline::RawInline(_, raw) => {
-                let mut run = Run::new().add_text(raw.clone());
+                let mut run = Run::new().fonts(body_font.clone()).add_text(raw.clone());
                 if let Some(sz) = size { run = run.size(sz); }
                 runs.push(run);
             }
@@ -546,14 +506,15 @@ fn inline_text_content(inlines: &[Inline]) -> String {
 }
 
 /// Returns heading font size in half-points for a given heading level (1-6).
-fn heading_size(level: u8) -> usize {
+/// Sizes are relative to the base_size (body text size in half-points).
+fn heading_size(level: u8, base_size: usize) -> usize {
     match level {
-        1 => 36,
-        2 => 30,
-        3 => 26,
-        4 => 24,
-        5 => 22,
-        _ => 20, // level 6 and beyond
+        1 => base_size + 14, // e.g. 22 + 14 = 36 for 11pt base
+        2 => base_size + 8,  // e.g. 22 + 8 = 30
+        3 => base_size + 4,  // e.g. 22 + 4 = 26
+        4 => base_size + 2,  // e.g. 22 + 2 = 24
+        5 => base_size,
+        _ => base_size - 2,  // level 6
     }
 }
 
