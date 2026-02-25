@@ -15,20 +15,29 @@ A pure-Rust document converter. Single binary, no runtime dependencies.
 
 ## Install
 
+**CLI tool:**
+
 ```bash
-cargo install --path .
+cargo install pandorust
+```
+
+**Library (no clap overhead):**
+
+```toml
+[dependencies]
+pandorust = { version = "0.1", default-features = false }
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/nicenoz/pandorust.git
+git clone https://github.com/qhkm/pandorust.git
 cd pandorust
 cargo build --release
 # Binary at target/release/pandorust (~5 MB)
 ```
 
-## Usage
+## CLI Usage
 
 ```bash
 # Markdown to HTML
@@ -39,6 +48,97 @@ pandorust input.md -o output.docx
 
 # Explicit format flags
 pandorust input.md -f markdown -t html -o output.html
+
+# Read from stdin
+cat input.md | pandorust - -t html -o output.html
+
+# List supported formats
+pandorust --list-formats
+```
+
+## Library Usage
+
+### Markdown to HTML
+
+```rust
+use pandorust::readers::markdown::read_markdown;
+use pandorust::writers::html::write_html;
+
+let md = "# Hello\n\nA **bold** paragraph.";
+let doc = read_markdown(md).unwrap();
+let html = write_html(&doc);
+
+assert!(html.contains("<h1"));
+assert!(html.contains("<strong>bold</strong>"));
+```
+
+### Markdown to DOCX
+
+```rust
+use pandorust::readers::markdown::read_markdown;
+use pandorust::writers::docx::write_docx;
+use std::fs;
+
+let md = "# Report\n\nGenerated from Rust.";
+let doc = read_markdown(md).unwrap();
+let bytes = write_docx(&doc).unwrap();
+
+fs::write("report.docx", bytes).unwrap();
+```
+
+### With YAML Front Matter
+
+```rust
+use pandorust::readers::markdown::read_markdown;
+use pandorust::writers::docx::write_docx;
+
+let md = r#"---
+title: Quarterly Report
+author: Finance Team
+fontsize: 11pt
+---
+
+# Q1 Results
+
+Revenue grew **15%** compared to last quarter.
+
+| Metric   | Q4 2025 | Q1 2026 |
+|----------|---------|---------|
+| Revenue  | RM 450k | RM 518k |
+| Expenses | RM 320k | RM 335k |
+| Profit   | RM 130k | RM 183k |
+"#;
+
+let doc = read_markdown(md).unwrap();
+
+// title, author, fontsize are applied to DOCX metadata and styling
+let bytes = write_docx(&doc).unwrap();
+```
+
+### Working with the AST
+
+```rust
+use pandorust::readers::markdown::read_markdown;
+use pandorust::ast::{Block, Inline};
+
+let doc = read_markdown("# Title\n\nSome text.").unwrap();
+
+for block in &doc.blocks {
+    match block {
+        Block::Header(level, _, inlines) => {
+            println!("H{}: {:?}", level, inlines);
+        }
+        Block::Para(inlines) => {
+            println!("Paragraph: {:?}", inlines);
+        }
+        _ => {}
+    }
+}
+
+// Access metadata
+if let Some(title) = doc.meta.title() {
+    println!("Title: {}", title);
+}
 ```
 
 ### YAML Front Matter
@@ -54,7 +154,12 @@ fontsize: 11pt
 # Content starts here
 ```
 
-The `title`, `author`, and `date` fields are included in DOCX metadata. `fontsize` controls body text size (default: 12pt).
+| Key | Effect |
+|-----|--------|
+| `title` | HTML `<title>`, DOCX core properties |
+| `author` | DOCX core properties |
+| `date` | DOCX core properties |
+| `fontsize` | Body text size (default: 12pt) |
 
 ## Architecture
 
@@ -91,17 +196,17 @@ The internal AST is inspired by pandoc's type system:
 cargo test
 ```
 
-74 tests across 7 test files covering AST construction, markdown parsing, HTML output, DOCX output, grid tables, CLI, and end-to-end integration.
+76 tests across 7 test files covering AST construction, markdown parsing, HTML output, DOCX output, grid tables, CLI, and end-to-end integration.
 
 ## Dependencies
 
-| Crate | Purpose |
-|-------|---------|
-| comrak 0.50 | GFM markdown parsing |
-| docx-rs 0.4 | DOCX generation |
-| clap 4.5 | CLI argument parsing |
-| serde + serde_yaml | YAML front matter |
-| thiserror 2 | Error types |
+| Crate | Purpose | Library | CLI |
+|-------|---------|---------|-----|
+| comrak 0.50 | GFM markdown parsing | yes | yes |
+| docx-rs 0.4 | DOCX generation | yes | yes |
+| serde + serde_yaml | YAML front matter | yes | yes |
+| thiserror 2 | Error types | yes | yes |
+| clap 4.5 | CLI argument parsing | no | yes |
 
 ## Roadmap
 
