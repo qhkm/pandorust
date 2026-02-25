@@ -15,20 +15,32 @@ A pure-Rust document converter. Single binary, no runtime dependencies.
 
 ## Install
 
-**CLI tool:**
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install qhkm/tap/pandorust
+```
+
+**Shell script (macOS / Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/qhkm/pandorust/main/install.sh | sh
+```
+
+**Cargo:**
 
 ```bash
 cargo install pandorust
 ```
 
-**Library (no clap overhead):**
+**Rust library (no clap overhead):**
 
 ```toml
 [dependencies]
 pandorust = { version = "0.1", default-features = false }
 ```
 
-Or build from source:
+**From source:**
 
 ```bash
 git clone https://github.com/qhkm/pandorust.git
@@ -36,6 +48,10 @@ cd pandorust
 cargo build --release
 # Binary at target/release/pandorust (~5 MB)
 ```
+
+**Prebuilt binaries:**
+
+Download from [GitHub Releases](https://github.com/qhkm/pandorust/releases) — available for macOS (arm64, x86_64) and Linux (arm64, x86_64).
 
 ## CLI Usage
 
